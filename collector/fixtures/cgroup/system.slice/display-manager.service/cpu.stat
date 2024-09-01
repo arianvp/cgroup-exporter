@@ -1,0 +1,4 @@
+usage_usec 188700
+user_usec 123740
+system_usec 64959
+core_sched.force_idle_usec 0
