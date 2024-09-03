@@ -17,8 +17,8 @@ an issue open for it: https://github.com/arianvp/cgroup-exporter/issues/1
 [`google/cadvisor`](https://github.com/google/cadvisor) is too heavy-weight, tries to
 do way more than cgroups, tries to support both cgroupv1 and cgroupv2, and is
 missing a lot of metrics (like pressure stall information). Furthermore they
-focus on "containers", whilst cgroups and containers are non synonyms. Cgroups
-are used for all services on a modern linux system for resource management.
+focus on "containers", whilst cgroups and containers are not synonyms. Cgroups
+are used for all services on a modern linux system for resource management; not just containers.
 
 [`mosquito/cgroups-exporter`](https://github.com/mosquito/cgroups-exporter) also comes with the
 baggage of supporting both cgroupv1 and cgroupv2, and is missing a lot of metrics.
