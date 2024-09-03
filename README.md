@@ -1,7 +1,16 @@
 # Control Group V2 exporter
 
 This is a lightweight Prometheus exporter for cgroups that only supports
-the unified cgroup v2 hierarchy.
+the unified cgroup v2 hierarchy. It exposes usage metrics for each cgroup
+in the hierarchy.
+
+Metrics supported are:
+
+* Pressure stall information (`io.pressure`, `memory.pressure`, `cpu.pressure`)
+* Events (like OOM, hitting max CPU, Memory, IO, etc) (`io.events`, `memory.events`)
+* Resource usage (`memory.usage`, `cpu.usage`) and limits (`io.max`, `memory.{min,low,high,max}`, `cpu.{min,low,high,max}`)
+* Detailed resource usage (`io.stat`, `memory.stat`, `cpu.stat`)
+
 
 Systemd dropped support for the legacy cgroup hierarchy in version 256.
 So there is no point in having the complexity of supporting both cgroup
