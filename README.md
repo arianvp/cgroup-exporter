@@ -10,6 +10,9 @@ Metrics supported are:
 * Events (like OOM, hitting max CPU, Memory, IO, etc) (`io.events`, `memory.events`)
 * Resource usage (`memory.usage`, `cpu.usage`) and limits (`io.max`, `memory.{min,low,high,max}`, `cpu.{min,low,high,max}`)
 * Detailed resource usage (`io.stat`, `memory.stat`, `cpu.stat`)
+    - `io.stat` gives IOPS and bytes read/written per device
+    - `memory.stat` gives page faults, cache, swap, etc
+    - `cpu.stat` gives number of times the CPU was throttled, time spent in different states, etc
 
 
 Systemd dropped support for the legacy cgroup hierarchy in version 256.
