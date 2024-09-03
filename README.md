@@ -6,7 +6,7 @@ in the hierarchy.
 
 Metrics supported are:
 
-* Pressure stall information (`io.pressure`, `memory.pressure`, `cpu.pressure`)
+* Pressure stall information (`io.pressure`, `memory.pressure`, `cpu.pressure`). Useful as a leading indicator for performance issues.
 * Events (like OOM, hitting max CPU, Memory, IO, etc) (`io.events`, `memory.events`)
 * Resource usage (`memory.usage`, `cpu.usage`) and limits (`io.max`, `memory.{min,low,high,max}`, `cpu.{min,low,high,max}`)
 * Detailed resource usage (`io.stat`, `memory.stat`, `cpu.stat`)
@@ -18,6 +18,7 @@ Metrics supported are:
 Systemd dropped support for the legacy cgroup hierarchy in version 256.
 So there is no point in having the complexity of supporting both cgroup
 versions.
+
 
 ## Why another exporter?
 
