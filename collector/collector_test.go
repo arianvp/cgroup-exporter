@@ -239,7 +239,7 @@ func TestCanParseRootIOStart(t *testing.T) {
 	ms := make(chan prometheus.Metric)
 	go func() {
 		defer close(ms)
-		if err := collectIOStat(strings.NewReader(iostat), ".", c.multipleCollectors["io.stat"].desc, ms); err != nil {
+		if err := collectIOStat(strings.NewReader(iostat), ".", c.multipleCollectors["io.stat"].descs, ms); err != nil {
 			t.Error(err)
 		}
 

@@ -31,7 +31,7 @@ type desc struct {
 }
 
 type multipleCollector struct {
-	desc    map[string]desc
+	descs   map[string]desc
 	collect collectMultipleFunc
 }
 
@@ -69,7 +69,7 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 		multipleCollectors: map[string]multipleCollector{
 			// TODO: memory.numastat
 			"memory.stat": {
-				desc: map[string]desc{
+				descs: map[string]desc{
 					"anon":                     {desc: prometheus.NewDesc("cgroup_memory_anon_bytes", "Amount of memory used in anonymous mappings such as brk(), sbrk(), and mmap(MAP_ANONYMOUS)", []string{"cgroup"}, nil)},
 					"file":                     {desc: prometheus.NewDesc("cgroup_memory_file_bytes", "Amount of memory used to cache filesystem data, including tmpfs and shared memory.", []string{"cgroup"}, nil)},
 					"kernel":                   {desc: prometheus.NewDesc("cgroup_memory_kernel_bytes", "Amount of total kernel memory, including (kernel_stack, pagetables, percpu, vmalloc, slab) in addition to other kernel memory use cases.", []string{"cgroup"}, nil)},
@@ -129,7 +129,7 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 				},
 				collect: collectFlatKeyed(prometheus.GaugeValue),
 			},
-			"memory.events": {desc: map[string]desc{
+			"memory.events": {descs: map[string]desc{
 				"low":            {desc: prometheus.NewDesc("cgroup_memory_events_low_total", "", []string{"cgroup"}, nil)},
 				"high":           {desc: prometheus.NewDesc("cgroup_memory_events_high_total", "", []string{"cgroup"}, nil)},
 				"max":            {desc: prometheus.NewDesc("cgroup_memory_events_max_total", "", []string{"cgroup"}, nil)},
@@ -137,19 +137,19 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 				"oom_kill":       {desc: prometheus.NewDesc("cgroup_memory_events_oom_kill_total", "", []string{"cgroup"}, nil)},
 				"oom_group_kill": {desc: prometheus.NewDesc("cgroup_memory_events_oom_group_kill_total", "", []string{"cgroup"}, nil)},
 			}, collect: collectFlatKeyed(prometheus.CounterValue)},
-			"memory.pressure": {desc: map[string]desc{
+			"memory.pressure": {descs: map[string]desc{
 				"some": {desc: prometheus.NewDesc("cgroup_memory_pressure_waiting_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"full": {desc: prometheus.NewDesc("cgroup_memory_pressure_stalled_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 			}, collect: collectPressure},
-			"cpu.pressure": {desc: map[string]desc{
+			"cpu.pressure": {descs: map[string]desc{
 				"some": {desc: prometheus.NewDesc("cgroup_cpu_pressure_waiting_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"full": {desc: prometheus.NewDesc("cgroup_cpu_pressure_stalled_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 			}, collect: collectPressure},
-			"io.pressure": {desc: map[string]desc{
+			"io.pressure": {descs: map[string]desc{
 				"some": {desc: prometheus.NewDesc("cgroup_io_pressure_waiting_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"full": {desc: prometheus.NewDesc("cgroup_io_pressure_stalled_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 			}, collect: collectPressure},
-			"cpu.stat": {desc: map[string]desc{
+			"cpu.stat": {descs: map[string]desc{
 				"usage_usec":                 {desc: prometheus.NewDesc("cgroup_cpu_usage_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"user_usec":                  {desc: prometheus.NewDesc("cgroup_cpu_user_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"system_usec":                {desc: prometheus.NewDesc("cgroup_cpu_system_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
@@ -160,7 +160,7 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 				"burst_usec":                 {desc: prometheus.NewDesc("cgroup_cpu_burst_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 				"core_sched.force_idle_usec": {desc: prometheus.NewDesc("cgroup_cpu_core_sched_force_idle_seconds_total", "", []string{"cgroup"}, nil), modifier: microSecondsToSeconds},
 			}, collect: collectFlatKeyed(prometheus.CounterValue)},
-			"io.stat": {desc: map[string]desc{
+			"io.stat": {descs: map[string]desc{
 				"rbytes": {desc: prometheus.NewDesc("cgroup_io_read_bytes_total", "", []string{"device", "cgroup"}, nil)},
 				"wbytes": {desc: prometheus.NewDesc("cgroup_io_write_bytes_total", "", []string{"device", "cgroup"}, nil)},
 				"dbytes": {desc: prometheus.NewDesc("cgroup_io_discard_bytes_total", "", []string{"device", "cgroup"}, nil)},
@@ -168,7 +168,7 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 				"wios":   {desc: prometheus.NewDesc("cgroup_io_write_operations_total", "", []string{"device", "cgroup"}, nil)},
 				"dios":   {desc: prometheus.NewDesc("cgroup_io_discard_operations_total", "", []string{"device", "cgroup"}, nil)},
 			}, collect: collectIOStat},
-			"pids.events": {desc: map[string]desc{
+			"pids.events": {descs: map[string]desc{
 				"max": {desc: prometheus.NewDesc("cgroup_pids_events_max_total", "", []string{"cgroup"}, nil)},
 			}, collect: collectFlatKeyed(prometheus.CounterValue)},
 		},
@@ -208,7 +208,7 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}
 				defer f.Close()
-				if err := col.collect(f, filepath.Dir(path), col.desc, m); err != nil {
+				if err := col.collect(f, filepath.Dir(path), col.descs, m); err != nil {
 					slog.Error("failed to collect cgroup", "error", err)
 				}
 			}
