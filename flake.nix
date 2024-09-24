@@ -27,24 +27,28 @@
       };
     });
 
-    devShells.x86_64-linux.default = with nixpkgs.legacyPackages.x86_64-linux; mkShell {
-      name = "cgroups-exporter";
-      nativeBuildInputs = [ go ];
-    };
-
-    checks.x86_64-linux.integration-test = nixpkgs.lib.nixos.runTest {
-      name = "cgroup-exporter";
-      hostPkgs = nixpkgs.legacyPackages.x86_64-linux;
-      nodes.machine = {
-        imports = [ self.nixosModules.default ];
-        services.prometheus.exporters.cgroup.enable = true;
-        services.prometheus.exporters.cgroup.port = 8080;
+    devShells = forAllSystems (system: {
+      default = with nixpkgsFor."${system}"; mkShell {
+        name = "cgroups-exporter";
+        nativeBuildInputs = [ go ];
       };
-      testScript = ''
-        machine.wait_for_unit("cgroup-exporter.service");
-        machine.succeed("curl http://localhost:8080/metrics");
-      '';
-    };
+    });
 
+    checks = forAllSystems (system: {
+      package = self.packages.${system}.default;
+      integration-test = nixpkgs.lib.nixos.runTest {
+        name = "cgroup-exporter";
+        hostPkgs = nixpkgsFor."${system}".legacyPackages;
+        nodes.machine = {
+          imports = [ self.nixosModules.default ];
+          services.prometheus.exporters.cgroup.enable = true;
+          services.prometheus.exporters.cgroup.port = 8080;
+        };
+        testScript = ''
+          machine.wait_for_unit("cgroup-exporter.service");
+          machine.succeed("curl http://localhost:8080/metrics");
+        '';
+      };
+    });
   };
 }
