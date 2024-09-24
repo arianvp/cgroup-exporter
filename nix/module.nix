@@ -1,5 +1,6 @@
 { config, lib, pkgs, ... }:
-let cfg = config.services.prometheus.exporters.cgroup; in {
+let cfg = config.services.prometheus.exporters.cgroup;
+in {
   options.services.prometheus.exporters.cgroup = {
     enable = lib.mkEnableOption "cgroup-exporter";
     package = lib.mkPackageOption pkgs "cgroup-exporter" { };
@@ -20,7 +21,10 @@ let cfg = config.services.prometheus.exporters.cgroup; in {
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/cgroup-exporter -listen-address ${cfg.listenAddress}:${toString cfg.port}";
+        ExecStart =
+          "${cfg.package}/bin/cgroup-exporter -listen-address ${cfg.listenAddress}:${
+            toString cfg.port
+          }";
         Restart = "always";
       };
     };
