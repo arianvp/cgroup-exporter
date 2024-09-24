@@ -1,21 +1,31 @@
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs?ref=nixpkgs-unstable";
-  outputs = { self, nixpkgs }: {
-    nixosModules.default = { config, lib, ... }: {
+  outputs = { self, nixpkgs }:
+  let
+    systems = [ "aarch64-linux" "x86_64-linux" ];
+    forAllSystems = nixpkgs.lib.genAttrs systems;
+    nixpkgsFor = forAllSystems (system: import nixpkgs {
+      inherit system;
+    });
+  in
+   {
+    nixosModules.default = { config, lib, pkgs, ... }: {
       imports = [
         ./nix/module.nix
       ];
 
-      services.prometheus.exporters.cgroup.package = lib.mkDefault self.packages.x86_64-linux.default;
+      services.prometheus.exporters.cgroup.package = lib.mkDefault self.packages.${pkgs.system}.default;
     };
 
     overlays.default = final: prev: {
       cgroup-exporter = final.callPackage ./nix/package.nix { };
     };
 
-    packages.x86_64-linux.default = import ./nix/package.nix {
-      inherit (nixpkgs.legacyPackages.x86_64-linux) buildGoModule;
-    };
+    packages = forAllSystems (system: {
+      default = import ./nix/package.nix {
+        inherit (nixpkgsFor."${system}") buildGoModule;
+      };
+    });
 
     devShells.x86_64-linux.default = with nixpkgs.legacyPackages.x86_64-linux; mkShell {
       name = "cgroups-exporter";
