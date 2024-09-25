@@ -4,7 +4,6 @@
     let
       systems = [ "aarch64-linux" "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-      nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
     in {
       nixosModules.default = { config, lib, pkgs, ... }: {
         imports = [ ./nix/module.nix ];
@@ -19,14 +18,14 @@
 
       packages = forAllSystems (system: {
         default = import ./nix/package.nix {
-          inherit (nixpkgsFor."${system}") buildGoModule;
+          inherit (nixpkgs.legacyPackages.${system}) buildGoModule;
         };
       });
 
-      formatter = forAllSystems (system: nixpkgsFor."${system}".nixfmt);
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
 
       devShells = forAllSystems (system: {
-        default = with nixpkgsFor."${system}";
+        default = with nixpkgs.legacyPackages.${system};
           mkShell {
             name = "cgroups-exporter";
             nativeBuildInputs = [ go ];
@@ -37,7 +36,7 @@
         package = self.packages.${system}.default;
         integration-test = nixpkgs.lib.nixos.runTest {
           name = "cgroup-exporter";
-          hostPkgs = nixpkgsFor."${system}".legacyPackages;
+          hostPkgs = nixpkgs.legacyPackages.${system};
           nodes.machine = {
             imports = [ self.nixosModules.default ];
             services.prometheus.exporters.cgroup.enable = true;
