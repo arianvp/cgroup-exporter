@@ -13,17 +13,24 @@ env:
     # give derivations access to private repos, so fetchFromGitHub works. Also inject some context of the triggering event
     impure-env = GITHUB_TOKEN=${{ github.token }} GITHUB_REPOSITORY=${{ github.repository }} GITHUB_EVENT_NAME=${{ github.event_name }} GITHUB_ACTOR=${{ github.actor }} GITHUB_SHA=${{ github.sha }} GITHUB_REF=${{ github.ref }}
   # we use flakes instead of actions/checkout to access the repo
-  FLAKE: ${{ format('github:{0}/{1}', github.repository, github.sha)}}
+  FLAKE: ${{ vars.ACT && '.' || format('github:{0}/{1}', github.repository, github.sha)}}
 jobs:
   nix-eval-jobs:
     outputs:
       jobs: ${{ steps.nix-eval-jobs.outputs.jobs }}
     runs-on: ubuntu-latest
     steps:
+      - run: |
+          echo UID=$UID
+          ls -la
+          exit 1
       - uses: cachix/install-nix-action@v27
       - id: nix-eval-jobs
-        run: echo "jobs=$(nix run "${FLAKE}#github-eval-jobs")" >> "$GITHUB_OUTPUT"
+        run: |
+          set -o pipefail
+          echo "jobs=$(nix run "${FLAKE}#github-eval-jobs")" >> "$GITHUB_OUTPUT"
   build:
+    if: false
     needs: [nix-eval-jobs]
     strategy:
       matrix:
@@ -38,6 +45,7 @@ jobs:
   # On release, als pushes a tag.
   # TODO: also push SLSA attestations
   push-container:
+    if: false
     permissions:
       contents: read
       packages: write
@@ -45,6 +53,7 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
+      - uses: cachix/install-nix-action@v27
       - run: nix run --inputs-from "$FLAKE" nixpkgs#skopeo -- login ghcr.io --username "$GITHUB_ACTOR" --password "$GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
