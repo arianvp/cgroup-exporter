@@ -13,7 +13,7 @@ env:
     # give derivations access to private repos, so fetchFromGitHub works. Also inject some context of the triggering event
     impure-env = GITHUB_TOKEN=${{ github.token }} GITHUB_REPOSITORY=${{ github.repository }} GITHUB_EVENT_NAME=${{ github.event_name }} GITHUB_ACTOR=${{ github.actor }} GITHUB_SHA=${{ github.sha }} GITHUB_REF=${{ github.ref }}
   # we use flakes instead of actions/checkout to access the repo
-  FLAKE: "github:${{ github.repository }}/${{ github.sha }}"
+  FLAKE: ${{ format('github:{0}/{1}', github.repository, github.sha)}}
 jobs:
   nix-eval-jobs:
     outputs:
