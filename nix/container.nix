@@ -1,7 +1,6 @@
 { dockerTools, cgroup-exporter }:
 dockerTools.streamLayeredImage {
-  name = "ghcr.io/arianvp/cgroup-exporter";
-  tag = "${cgroup-exporter.version}-${cgroup-exporter.go.GOARCH}";
+  name = "cgroup-exporter";
   config = {
     Entrypoint = [ "${cgroup-exporter}/bin/cgroup-exporter" ];
     Cmd = [
