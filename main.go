@@ -16,8 +16,9 @@ func main() {
 	cgroup := flag.String("cgroup", "", "what cgroup to monitor. Can be a blob. If empty all cgroups are monitored.")
 	flag.Parse()
 	cgroupfs := os.DirFS("/sys/fs/cgroup")
+	procfs := os.DirFS("/proc")
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(collector.New(cgroupfs, *cgroup))
+	registry.MustRegister(collector.NewWithProcfs(cgroupfs, procfs, *cgroup))
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{Registry: registry}))
 	// TODO: cancellation
 	if err := http.ListenAndServe(*addr, nil); err != nil {
