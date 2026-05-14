@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: cgroup-exporter
-          image: ghcr.io/arianvp/cgroup-exporter:0.3.1-amd64
+          image: ghcr.io/arianvp/cgroup-exporter:0.3.3-amd64
           ports:
             - containerPort: 13232
           volumeMounts:
