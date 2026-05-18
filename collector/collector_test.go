@@ -75,6 +75,105 @@ func TestSkipsMaxMemoryMax(t *testing.T) {
 	}
 }
 
+func TestCollectsOpenFDsFromProcfs(t *testing.T) {
+	cgroupfs := fstest.MapFS{
+		"system.slice/worker.service/cgroup.procs": &fstest.MapFile{Data: []byte("123\n123\n456\n789\n")},
+	}
+	procfs := fstest.MapFS{
+		"123/fd/0": &fstest.MapFile{},
+		"123/fd/1": &fstest.MapFile{},
+		"456/fd/0": &fstest.MapFile{},
+		"456/fd/1": &fstest.MapFile{},
+		"456/fd/2": &fstest.MapFile{},
+	}
+
+	c := NewWithProcfs(cgroupfs, procfs, "")
+	metrics := make(chan prometheus.Metric)
+	go func() {
+		defer close(metrics)
+		c.Collect(metrics)
+	}()
+
+	metric := <-metrics
+	if metric == nil {
+		t.Fatal("expected metric")
+	}
+
+	dto := new(io_prometheus_client.Metric)
+	if err := metric.Write(dto); err != nil {
+		t.Fatal(err)
+	}
+	if dto.Gauge == nil || dto.Gauge.Value == nil {
+		t.Fatal("expected gauge metric")
+	}
+	if *dto.Gauge.Value != 5 {
+		t.Fatalf("expected 5 open fds, got %f", *dto.Gauge.Value)
+	}
+
+	var foundCgroup bool
+	for _, l := range dto.Label {
+		if *l.Name == "cgroup" {
+			foundCgroup = true
+			if *l.Value != "system.slice/worker.service" {
+				t.Fatalf("expected cgroup label system.slice/worker.service, got %q", *l.Value)
+			}
+		}
+	}
+	if !foundCgroup {
+		t.Fatal("expected cgroup label")
+	}
+}
+
+func TestReadPIDsDeDuplicatesAndSkipsBlanks(t *testing.T) {
+	pids, err := readPIDs(strings.NewReader("123\n\n123\n456\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"123", "456"}
+	if len(pids) != len(expected) {
+		t.Fatalf("expected %d pids, got %d", len(expected), len(pids))
+	}
+	for i := range expected {
+		if pids[i] != expected[i] {
+			t.Fatalf("expected pid %q at index %d, got %q", expected[i], i, pids[i])
+		}
+	}
+}
+
+type permissionDeniedFS struct{}
+
+func (permissionDeniedFS) Open(name string) (fs.File, error) {
+	return nil, fs.ErrPermission
+}
+
+func TestSkipsOpenFDMetricWhenProcfsIsNotPermitted(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	cgroupfs := fstest.MapFS{
+		"system.slice/worker.service/cgroup.procs": &fstest.MapFile{Data: []byte("123\n")},
+	}
+
+	c := NewWithProcfs(cgroupfs, permissionDeniedFS{}, "")
+	metrics := make(chan prometheus.Metric)
+	go func() {
+		defer close(metrics)
+		c.Collect(metrics)
+	}()
+
+	metric, ok := <-metrics
+	if ok || metric != nil {
+		t.Fatal("expected open fd metric to be skipped when procfs is not permitted")
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("expected no error logs, got %q", logs.String())
+	}
+}
+
 func TestParsesOtherMemory(t *testing.T) {
 	mapfs := fstest.MapFS{
 		"system.slice/memory.min": &fstest.MapFile{Data: []byte("1\n")},

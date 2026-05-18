@@ -14,6 +14,8 @@ Metrics supported are:
     - `memory.stat` gives page faults, cache, swap, etc
     - `cpu.stat` gives number of times the CPU was throttled, time spent in different states, etc
     - `memory.numa_stat` gives per-NUMA node memory statistics
+* Process accounting derived from procfs
+    - `cgroup_open_fds_current` counts open file descriptors by summing `/proc/<pid>/fd` for the PIDs listed in each cgroup's `cgroup.procs`
 
 
 Systemd dropped support for the legacy cgroup hierarchy in version 256.
@@ -42,4 +44,3 @@ baggage of supporting both cgroupv1 and cgroupv2, and is missing a lot of metric
 
 [`treydock/cgroup_exporter`](https://github.com/treydock/cgroup_exporter) also comes with the
 baggage of supporting both cgroupv1 and cgroupv2, and is missing a lot of metrics.
-

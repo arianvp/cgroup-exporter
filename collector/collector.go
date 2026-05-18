@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,13 +10,16 @@ import (
 	pathpkg "path"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type cgroupCollector struct {
 	fs                 fs.FS
+	procfs             fs.FS
 	glob               string
+	openFDsDesc        *prometheus.Desc
 	singleCollectors   map[string]collector
 	multipleCollectors map[string]multipleCollector
 }
@@ -38,17 +42,25 @@ type multipleCollector struct {
 type collectFunc func(f io.Reader, path string, desc *prometheus.Desc, m chan<- prometheus.Metric) error
 type collectMultipleFunc func(f io.Reader, path string, desc map[string]desc, m chan<- prometheus.Metric) error
 
+var errSkipMetric = errors.New("skip metric")
+
 func microSecondsToSeconds(microseconds float64) float64 {
 	return microseconds / 1e6
 }
 
 func New(fs fs.FS, glob string) prometheus.Collector {
+	return NewWithProcfs(fs, nil, glob)
+}
+
+func NewWithProcfs(fs fs.FS, procfs fs.FS, glob string) prometheus.Collector {
 	if glob == "" {
 		glob = "*"
 	}
 	return &cgroupCollector{
-		fs:   fs,
-		glob: glob,
+		fs:          fs,
+		procfs:      procfs,
+		glob:        glob,
+		openFDsDesc: prometheus.NewDesc("cgroup_open_fds_current", "Number of open file descriptors held by processes currently in the cgroup.", []string{"cgroup"}, nil),
 		singleCollectors: map[string]collector{
 			"memory.min":     {desc: prometheus.NewDesc("cgroup_memory_min_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 			"memory.low":     {desc: prometheus.NewDesc("cgroup_memory_low_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
@@ -273,6 +285,20 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 				}
 			}
 
+			if name == "cgroup.procs" && c.procfs != nil {
+				f, err := c.fs.Open(path)
+				if err != nil {
+					return fmt.Errorf("failed to open file %q: %w", path, err)
+				}
+				defer f.Close()
+				if err := c.collectOpenFDs(f, pathpkg.Dir(path), m); err != nil {
+					if errors.Is(err, errSkipMetric) {
+						return nil
+					}
+					slog.Error("failed to collect cgroup open file descriptors", "error", err, "cgroup", pathpkg.Dir(path))
+				}
+			}
+
 			// TODO: refactor stuff so this is generic
 			if name == "io.stat" {
 			}
@@ -282,6 +308,59 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 			slog.Error("failed to walk cgroup", "error", err)
 		}
 	}
+}
+
+func (c *cgroupCollector) collectOpenFDs(f io.Reader, path string, m chan<- prometheus.Metric) error {
+	pids, err := readPIDs(f)
+	if err != nil {
+		return err
+	}
+
+	var total float64
+	for _, pid := range pids {
+		fdDir := pathpkg.Join(pid, "fd")
+		entries, err := fs.ReadDir(c.procfs, fdDir)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if isProcfsAccessError(err) {
+				return errSkipMetric
+			}
+			return fmt.Errorf("read %q: %w", fdDir, err)
+		}
+		total += float64(len(entries))
+	}
+
+	m <- prometheus.MustNewConstMetric(c.openFDsDesc, prometheus.GaugeValue, total, path)
+	return nil
+}
+
+func isProcfsAccessError(err error) bool {
+	return errors.Is(err, fs.ErrPermission) ||
+		errors.Is(err, syscall.EPERM) ||
+		errors.Is(err, syscall.EACCES)
+}
+
+func readPIDs(r io.Reader) ([]string, error) {
+	scanner := bufio.NewScanner(r)
+	seen := make(map[string]struct{})
+	var pids []string
+	for scanner.Scan() {
+		pid := strings.TrimSpace(scanner.Text())
+		if pid == "" {
+			continue
+		}
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		seen[pid] = struct{}{}
+		pids = append(pids, pid)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return pids, nil
 }
 
 func collectIOStat(f io.Reader, path string, descs map[string]desc, m chan<- prometheus.Metric) error {
