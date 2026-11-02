@@ -43,3 +43,13 @@ baggage of supporting both cgroupv1 and cgroupv2, and is missing a lot of metric
 [`treydock/cgroup_exporter`](https://github.com/treydock/cgroup_exporter) also comes with the
 baggage of supporting both cgroupv1 and cgroupv2, and is missing a lot of metrics.
 
+
+## Development
+
+```
+nix flake check   # tests, integration tests, go vet, staticcheck, errcheck, gofmt
+nix develop       # a shell with go, staticcheck, errcheck and govulncheck
+```
+
+`govulncheck` and the test run against the latest versions of the dependencies
+need network access, so they only run in CI.

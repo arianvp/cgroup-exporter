@@ -36,7 +36,7 @@
         default = with nixpkgs.legacyPackages.${system};
           mkShell {
             name = "cgroups-exporter";
-            nativeBuildInputs = [ go ];
+            nativeBuildInputs = [ go go-tools errcheck govulncheck ];
           };
       });
 
@@ -44,8 +44,32 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           container = self.packages.${system}.container;
+          # Linters run on the sources of the package itself, so that they see
+          # the same vendored dependencies and Go toolchain as the build does.
+          lint = name: tools: script:
+            self.packages.${system}.default.overrideAttrs (old: {
+              pname = "cgroup-exporter-${name}";
+              nativeBuildInputs = old.nativeBuildInputs ++ tools;
+              buildPhase = ''
+                export HOME=$TMPDIR
+                ${script}
+              '';
+              doCheck = false;
+              installPhase = "touch $out";
+            });
         in {
         package = self.packages.${system}.default;
+        vet = lint "vet" [ ] "go vet ./...";
+        staticcheck = lint "staticcheck" [ pkgs.go-tools ] "staticcheck ./...";
+        errcheck = lint "errcheck" [ pkgs.errcheck ] "errcheck ./...";
+        gofmt = lint "gofmt" [ ] ''
+          unformatted=$(gofmt -l $(find . -path ./vendor -prune -o -name '*.go' -print))
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+        '';
         podman-kube-test = nixpkgs.lib.nixos.runTest {
           name = "cgroup-exporter-podman-kube";
           hostPkgs = pkgs;
