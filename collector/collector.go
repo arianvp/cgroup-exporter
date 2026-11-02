@@ -257,7 +257,7 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if err := col.collect(f, pathpkg.Dir(path), col.desc, m); err != nil {
 					slog.Error("failed to collect cgroup", "error", err)
 				}
@@ -270,7 +270,7 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if err := col.collect(f, pathpkg.Dir(path), col.descs, m); err != nil {
 					slog.Error("failed to collect cgroup", "error", err)
 				}
@@ -408,7 +408,9 @@ func visitNestedKeyed(r io.Reader, visitEntry entryVisitor) error {
 			if len(kv) != 2 {
 				return fmt.Errorf("invalid key-value pair %q %q, %d", k, v, len(kv))
 			}
-			visitKV(kv[0], kv[1])
+			if err := visitKV(kv[0], kv[1]); err != nil {
+				return err
+			}
 		}
 
 	}

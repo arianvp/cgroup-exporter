@@ -108,7 +108,9 @@ func TestParsesOtherMemory(t *testing.T) {
 		t.Error("expected metric")
 	}
 	dto := new(io_prometheus_client.Metric)
-	metric.Write(dto)
+	if err := metric.Write(dto); err != nil {
+		t.Fatal(err)
+	}
 
 	if *dto.Gauge.Value != 1 {
 		t.Errorf("expected 1 got %f", *dto.Gauge.Value)
@@ -136,7 +138,9 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 		t.Fatal("expected metric")
 	}
 	dto := new(io_prometheus_client.Metric)
-	metric.Write(dto)
+	if err := metric.Write(dto); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, l := range dto.Label {
 		if *l.Name == "cgroup" {
@@ -155,7 +159,9 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 		t.Fatal("expected metric")
 	}
 	dto = new(io_prometheus_client.Metric)
-	metric.Write(dto)
+	if err := metric.Write(dto); err != nil {
+		t.Fatal(err)
+	}
 	if *dto.Counter.Value != 0 {
 		t.Errorf("expected 0 got %f", *dto.Counter.Value)
 	}
@@ -342,7 +348,9 @@ func TestCanParseRootIOStart(t *testing.T) {
 
 	for m := range ms {
 		dto := new(io_prometheus_client.Metric)
-		m.Write(dto)
+		if err := m.Write(dto); err != nil {
+			t.Fatal(err)
+		}
 		for _, l := range dto.Label {
 			if *l.Name == "cgroup" {
 				if *l.Value != "." {
@@ -427,7 +435,9 @@ kernel_stack N0=19283968
 
 	for m := range ms {
 		dto := new(io_prometheus_client.Metric)
-		m.Write(dto)
+		if err := m.Write(dto); err != nil {
+			t.Fatal(err)
+		}
 
 		// Extract metric name from Desc string
 		descStr := m.Desc().String()
@@ -496,7 +506,9 @@ anon N0=5678
 		if strings.Contains(desc, `fqName: "cgroup_memory_numa_anon_bytes"`) {
 			found = true
 			dto := new(io_prometheus_client.Metric)
-			m.Write(dto)
+			if err := m.Write(dto); err != nil {
+				t.Fatal(err)
+			}
 			if *dto.Gauge.Value != 5678 {
 				t.Fatalf("expected 5678 got %f", *dto.Gauge.Value)
 			}
