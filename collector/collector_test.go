@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -19,6 +20,8 @@ import (
 var cgroup embed.FS
 
 func TestCanCollectWholeCgroupTree(t *testing.T) {
+	logs := captureLogs(t)
+
 	c := New(cgroup, "")
 	metrics := make(chan prometheus.Metric)
 	go func() {
@@ -27,7 +30,20 @@ func TestCanCollectWholeCgroupTree(t *testing.T) {
 	}()
 	for range metrics {
 	}
-	// TODO How to make sure no errors were logged.
+
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("errors logged while collecting: %s", logs)
+	}
+}
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+	return &logs
 }
 
 /*(func FuzzCgroupTree(f *testing.F) {
@@ -339,12 +355,7 @@ func TestCanParseRootIOStart(t *testing.T) {
 }
 
 func TestIOStatSkipsInvalidDevices(t *testing.T) {
-	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	t.Cleanup(func() {
-		slog.SetDefault(previousLogger)
-	})
+	logs := captureLogs(t)
 
 	iostat := `(unknown) rbytes=0 wbytes=0 rios=6 wios=0 dbytes=0 dios=0
 259:3 rbytes=241664 wbytes=0 rios=6 wios=0 dbytes=0 dios=0
@@ -494,5 +505,87 @@ anon N0=5678
 
 	if !found {
 		t.Fatal("expected anon metric to be collected")
+	}
+}
+
+func TestFindFilesInAllDirectoriesVisitsInnerNodes(t *testing.T) {
+	mapfs := fstest.MapFS{
+		"system.slice/memory.current":             &fstest.MapFile{Data: []byte("1234\n")},
+		"system.slice/foo.service/memory.current": &fstest.MapFile{Data: []byte("5678\n")},
+	}
+	var paths []string
+	err := FindFilesInAllDirectories(mapfs, "system.slice", func(filePath string, entry fs.DirEntry) error {
+		paths = append(paths, filePath)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(paths)
+	want := []string{"system.slice/foo.service/memory.current", "system.slice/memory.current"}
+	if !slices.Equal(paths, want) {
+		t.Errorf("expected %v got %v", want, paths)
+	}
+}
+
+// Pressure stall information of an inner cgroup can't be derived from the
+// cgroups below it, so it has to be collected for every cgroup in the tree.
+func TestCollectsPressureFromInnerCgroups(t *testing.T) {
+	c := New(cgroup, "fixtures/cgroup")
+	metrics := make(chan prometheus.Metric)
+	go func() {
+		defer close(metrics)
+		c.Collect(metrics)
+	}()
+
+	type metricKey struct {
+		name   string
+		cgroup string
+	}
+	fqNameRe := regexp.MustCompile(`fqName:\s*"([^"]+)"`)
+	collected := make(map[metricKey]float64)
+	for m := range metrics {
+		matches := fqNameRe.FindStringSubmatch(m.Desc().String())
+		if len(matches) < 2 {
+			t.Fatalf("could not extract metric name from %s", m.Desc().String())
+		}
+		dto := new(io_prometheus_client.Metric)
+		if err := m.Write(dto); err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range dto.Label {
+			if *l.Name == "cgroup" {
+				collected[metricKey{name: matches[1], cgroup: *l.Value}] = dto.Counter.GetValue()
+			}
+		}
+	}
+
+	cgroups := []string{
+		"fixtures/cgroup",
+		"fixtures/cgroup/system.slice",
+		"fixtures/cgroup/system.slice/nix-daemon.service",
+		"fixtures/cgroup/user.slice",
+		"fixtures/cgroup/user.slice/user-1000.slice",
+		"fixtures/cgroup/user.slice/user-1000.slice/session-2.scope",
+	}
+	names := []string{
+		"cgroup_cpu_pressure_waiting_seconds_total",
+		"cgroup_cpu_pressure_stalled_seconds_total",
+		"cgroup_io_pressure_waiting_seconds_total",
+		"cgroup_io_pressure_stalled_seconds_total",
+		"cgroup_memory_pressure_waiting_seconds_total",
+		"cgroup_memory_pressure_stalled_seconds_total",
+	}
+	for _, cg := range cgroups {
+		for _, name := range names {
+			if _, ok := collected[metricKey{name: name, cgroup: cg}]; !ok {
+				t.Errorf("expected %s for cgroup %q", name, cg)
+			}
+		}
+	}
+
+	key := metricKey{name: "cgroup_memory_pressure_waiting_seconds_total", cgroup: "fixtures/cgroup/system.slice"}
+	if got := collected[key]; got != 62e-6 {
+		t.Errorf("expected 0.000062 got %f", got)
 	}
 }
