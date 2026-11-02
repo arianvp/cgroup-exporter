@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -222,6 +223,10 @@ func FindFilesInAllDirectories(
 		entry fs.DirEntry,
 		err error,
 	) error {
+		// Cgroups come and go whilst we walk the hierarchy.
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -246,6 +251,9 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 
 			if col, ok := c.singleCollectors[name]; ok {
 				f, err := c.fs.Open(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					return nil
+				}
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}
@@ -256,6 +264,9 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 			}
 			if col, ok := c.multipleCollectors[name]; ok {
 				f, err := c.fs.Open(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					return nil
+				}
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}

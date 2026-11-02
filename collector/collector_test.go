@@ -589,3 +589,60 @@ func TestCollectsPressureFromInnerCgroups(t *testing.T) {
 		t.Errorf("expected 0.000062 got %f", got)
 	}
 }
+
+type vanishingFS struct {
+	fs.FS
+	vanished map[string]bool
+}
+
+func (v vanishingFS) Open(name string) (fs.File, error) {
+	if v.vanished[name] {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	return v.FS.Open(name)
+}
+
+func TestKeepsCollectingWhenCgroupsVanish(t *testing.T) {
+	logs := captureLogs(t)
+
+	mapfs := fstest.MapFS{
+		"system.slice/memory.current":                   &fstest.MapFile{Data: []byte("1\n")},
+		"system.slice/gone.service/memory.current":      &fstest.MapFile{Data: []byte("2\n")},
+		"system.slice/gone-file.service/memory.current": &fstest.MapFile{Data: []byte("3\n")},
+		"system.slice/kept.service/memory.current":      &fstest.MapFile{Data: []byte("4\n")},
+	}
+	vanished := map[string]bool{
+		"system.slice/gone.service":                     true,
+		"system.slice/gone-file.service/memory.current": true,
+	}
+
+	c := New(vanishingFS{FS: mapfs, vanished: vanished}, "")
+	metrics := make(chan prometheus.Metric)
+	go func() {
+		defer close(metrics)
+		c.Collect(metrics)
+	}()
+
+	var cgroups []string
+	for m := range metrics {
+		dto := new(io_prometheus_client.Metric)
+		if err := m.Write(dto); err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range dto.Label {
+			if *l.Name == "cgroup" {
+				cgroups = append(cgroups, *l.Value)
+			}
+		}
+	}
+
+	slices.Sort(cgroups)
+	want := []string{"system.slice", "system.slice/kept.service"}
+	if !slices.Equal(cgroups, want) {
+		t.Errorf("expected %v got %v", want, cgroups)
+	}
+
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("errors logged while collecting: %s", logs)
+	}
+}

@@ -85,6 +85,9 @@
                 assert f'{metric}{{cgroup="system.slice"}}' in metrics, (
                     f"no {metric} for system.slice"
                 )
+            machine.fail(
+                "journalctl -u cgroup-exporter.service | grep -q 'failed to walk cgroup'"
+            )
           '';
         };
       });
