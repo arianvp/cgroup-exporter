@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -50,12 +51,13 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 		fs:   fs,
 		glob: glob,
 		singleCollectors: map[string]collector{
-			"memory.min":     {desc: prometheus.NewDesc("cgroup_memory_min_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
-			"memory.low":     {desc: prometheus.NewDesc("cgroup_memory_low_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
-			"memory.high":    {desc: prometheus.NewDesc("cgroup_memory_high_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
-			"memory.max":     {desc: prometheus.NewDesc("cgroup_memory_max_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
-			"memory.current": {desc: prometheus.NewDesc("cgroup_memory_current_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
-
+			"memory.min":          {desc: prometheus.NewDesc("cgroup_memory_min_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.low":          {desc: prometheus.NewDesc("cgroup_memory_low_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.high":         {desc: prometheus.NewDesc("cgroup_memory_high_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.max":          {desc: prometheus.NewDesc("cgroup_memory_max_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.current":      {desc: prometheus.NewDesc("cgroup_memory_current_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.peak":         {desc: prometheus.NewDesc("cgroup_memory_peak_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"memory.swap.peak":    {desc: prometheus.NewDesc("cgroup_memory_swap_peak_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 			"memory.swap.high":    {desc: prometheus.NewDesc("cgroup_memory_swap_high_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 			"memory.swap.max":     {desc: prometheus.NewDesc("cgroup_memory_swap_max_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 			"memory.swap.current": {desc: prometheus.NewDesc("cgroup_memory_swap_current_bytes", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
@@ -65,6 +67,7 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 
 			"pids.current": {desc: prometheus.NewDesc("cgroup_pids_current", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 			"pids.max":     {desc: prometheus.NewDesc("cgroup_pids_max", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
+			"pids.peak":    {desc: prometheus.NewDesc("cgroup_pids_peak", "", []string{"cgroup"}, nil), collect: collectSingleValue(prometheus.GaugeValue)},
 		},
 		multipleCollectors: map[string]multipleCollector{
 			"memory.numa_stat": {descs: map[string]desc{
@@ -196,6 +199,13 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 				"wios":   {desc: prometheus.NewDesc("cgroup_io_write_operations_total", "", []string{"device", "cgroup"}, nil)},
 				"dios":   {desc: prometheus.NewDesc("cgroup_io_discard_operations_total", "", []string{"device", "cgroup"}, nil)},
 			}, collect: collectIOStat},
+			"memory.swap.events": {descs: map[string]desc{
+				"high": {desc: prometheus.NewDesc("cgroup_memory_swap_events_high_total", "", []string{"cgroup"}, nil)},
+				"max":  {desc: prometheus.NewDesc("cgroup_memory_swap_events_max_total", "", []string{"cgroup"}, nil)},
+				"fail": {desc: prometheus.NewDesc("cgroup_memory_swap_events_fail_total", "", []string{"cgroup"}, nil)},
+			},
+				collect: collectFlatKeyed(prometheus.CounterValue),
+			},
 			"pids.events": {descs: map[string]desc{
 				"max": {desc: prometheus.NewDesc("cgroup_pids_events_max_total", "", []string{"cgroup"}, nil)},
 			}, collect: collectFlatKeyed(prometheus.CounterValue)},
@@ -203,42 +213,29 @@ func New(fs fs.FS, glob string) prometheus.Collector {
 	}
 }
 
-// FindFilesInLeafDirectories finds and processes all files in leaf directories
-func FindFilesInLeafDirectories(fsys fs.FS, root string, process func(filePath string, entry fs.DirEntry) error) error {
-	return fs.WalkDir(fsys, root, func(path string, d fs.DirEntry, err error) error {
+func FindFilesInAllDirectories(
+	fsys fs.FS,
+	root string,
+	process func(string, fs.DirEntry) error,
+) error {
+	return fs.WalkDir(fsys, root, func(
+		path string,
+		entry fs.DirEntry,
+		err error,
+	) error {
+		// Cgroups come and go whilst we walk the hierarchy.
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 
-		if d.IsDir() {
-			// Check if the directory is a leaf directory
-			isLeaf := true
-			subDirEntries, readErr := fs.ReadDir(fsys, path)
-			if readErr != nil {
-				return readErr
-			}
-
-			// Determine if the directory has any subdirectories
-			for _, entry := range subDirEntries {
-				if entry.IsDir() {
-					isLeaf = false
-					break
-				}
-			}
-
-			// If it's a leaf directory, process its files
-			if isLeaf {
-				for _, entry := range subDirEntries {
-					if !entry.IsDir() {
-						filePath := pathpkg.Join(path, entry.Name())
-						if err := process(filePath, entry); err != nil {
-							return err
-						}
-					}
-				}
-			}
+		if entry.IsDir() {
+			return nil
 		}
-		return nil
+
+		return process(path, entry)
 	})
 }
 
@@ -249,11 +246,14 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 		slog.Error("failed to glob cgroups", "error", err)
 	}
 	for _, match := range matches {
-		if err := FindFilesInLeafDirectories(c.fs, match, func(path string, d fs.DirEntry) error {
+		if err := FindFilesInAllDirectories(c.fs, match, func(path string, d fs.DirEntry) error {
 			name := d.Name()
 
 			if col, ok := c.singleCollectors[name]; ok {
 				f, err := c.fs.Open(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					return nil
+				}
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}
@@ -264,6 +264,9 @@ func (c *cgroupCollector) Collect(m chan<- prometheus.Metric) {
 			}
 			if col, ok := c.multipleCollectors[name]; ok {
 				f, err := c.fs.Open(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					return nil
+				}
 				if err != nil {
 					return fmt.Errorf("failed to open file %q: %w", path, err)
 				}

@@ -64,15 +64,30 @@
         integration-test = nixpkgs.lib.nixos.runTest {
           name = "cgroup-exporter";
           hostPkgs = nixpkgs.legacyPackages.${system};
+          globalTimeout = 300;
           nodes.machine = {
             imports = [ self.nixosModules.default ];
             services.prometheus.exporters.cgroup.enable = true;
             services.prometheus.exporters.cgroup.port = 8080;
           };
           testScript = ''
-            machine.wait_for_unit("cgroup-exporter.service")
-            machine.wait_for_open_port(8080)
-            machine.succeed("curl -sf http://localhost:8080/metrics | grep cgroup_memory_current_bytes")
+            machine.wait_for_unit("cgroup-exporter.service", timeout=60)
+            machine.wait_for_open_port(8080, timeout=30)
+            metrics = machine.succeed("curl -sf http://localhost:8080/metrics")
+            assert 'cgroup_memory_current_bytes{cgroup="system.slice"}' in metrics
+            # system.slice has children, so this only works if inner cgroups
+            # are collected as well.
+            for metric in [
+                "cgroup_cpu_pressure_waiting_seconds_total",
+                "cgroup_io_pressure_waiting_seconds_total",
+                "cgroup_memory_pressure_waiting_seconds_total",
+            ]:
+                assert f'{metric}{{cgroup="system.slice"}}' in metrics, (
+                    f"no {metric} for system.slice"
+                )
+            machine.fail(
+                "journalctl -u cgroup-exporter.service | grep -q 'failed to walk cgroup'"
+            )
           '';
         };
       });
